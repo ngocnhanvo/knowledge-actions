@@ -1,0 +1,63 @@
+name: Shared Playwright Chromium
+
+on:
+  workflow_call:
+    inputs:
+      site_url:
+        description: 'HTTPS origin belonging to the caller project'
+        type: string
+        required: true
+      expected_hostname:
+        description: 'Exact hostname; redirects to other origins fail'
+        type: string
+        required: true
+      suite:
+        description: 'smoke or wordpress-site-health'
+        type: string
+        default: smoke
+        required: false
+      disallowed_db_name:
+        description: 'Optional comparison database name, never printed'
+        type: string
+        default: ''
+        required: false
+    secrets:
+      WP_ADMIN_USERNAME:
+        required: false
+      WP_ADMIN_PASSWORD:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  browser:
+    name: Chromium / ${{ inputs.suite }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.0-noble
+      options: --ipc=host
+    steps:
+      - name: Checkout shared browser test engine
+        uses: actions/checkout@v4
+        with:
+          repository: ngocnhanvo/knowledge-actions
+          ref: main
+          persist-credentials: false
+      - name: Restore npm download cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: playwright-1.64.0-npm-${{ runner.os }}
+      - name: Install small JavaScript wrapper (Chromium already in image)
+        run: npm install --no-package-lock --ignore-scripts --no-audit --no-fund --prefer-offline
+      - name: Run approved browser suite (read only)
+        run: npm run test:browser
+        env:
+          SITE_URL: ${{ inputs.site_url }}
+          EXPECTED_HOST: ${{ inputs.expected_hostname }}
+          TEST_SUITE: ${{ inputs.suite }}
+          DISALLOWED_DB_NAME: ${{ inputs.disallowed_db_name }}
+          WP_ADMIN_USERNAME: ${{ secrets.WP_ADMIN_USERNAME }}
+          WP_ADMIN_PASSWORD: ${{ secrets.WP_ADMIN_PASSWORD }}
