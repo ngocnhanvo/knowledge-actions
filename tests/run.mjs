@@ -76,7 +76,7 @@ async function wordpressSiteHealth(browser, origin) {
       [...tr.querySelectorAll('th, td')].map(cell => (cell.textContent ?? '').trim())
     ));
     const row = rows.find(cells => cells.length >= 2 &&
-      /database name|tên cơ sở dữ liệu/i.test(cells[0]));
+      /database name|tên cơ sở dữ liệu|tên database/i.test(cells[0]));
     if (!row) {
       // Structural diagnostics only: do NOT log real field labels or field values.
       const schema = await databaseBlock.evaluate(el => ({
@@ -84,7 +84,7 @@ async function wordpressSiteHealth(browser, origin) {
         tables: el.querySelectorAll('table').length,
         headings: el.querySelectorAll('th').length,
         cells: el.querySelectorAll('td').length,
-        hasDatabaseNameLabel: /database name|tên cơ sở dữ liệu/i.test(el.textContent ?? ''),
+        hasDatabaseNameLabel: /database name|tên cơ sở dữ liệu|tên database/i.test(el.textContent ?? ''),
       }));
       console.log('SITE_HEALTH_SCHEMA=' + JSON.stringify(schema));
       // Header cells are public WordPress field titles, not database field values.
