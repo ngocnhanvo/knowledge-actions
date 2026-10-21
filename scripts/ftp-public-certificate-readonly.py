@@ -11,6 +11,8 @@ import ftplib
 import os
 import socket
 import ssl
+import re
+import subprocess
 from urllib.parse import urlsplit
 
 value=os.getenv("FTP_SERVER","").strip()
@@ -42,7 +44,29 @@ except ssl.SSLError as ex:
     print("FTPS_CERT trusted_ca_chain=no class="+type(ex).__name__)
     raise SystemExit(1)
 except (OSError,ftplib.Error) as ex:
-    print("FTPS_CERT inspection_failed_class="+type(ex).__name__)
+    print("FTPS_CERT python_inspection_failed_class="+type(ex).__name__)
+    # OpenSSL certificate-only fallback: no FTP account or password is transmitted.
+    try:
+        p=subprocess.run(
+            ["openssl","s_client","-starttls","ftp","-connect",host+":"+str(port),
+             "-servername",host,"-showcerts"],
+            input="\n",capture_output=True,text=True,timeout=17,check=False
+        )
+        pem=re.search(r"-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----",p.stdout,re.S)
+        if not pem:
+            print("FTPS_CERT openssl_metadata=unavailable")
+        else:
+            cert_info=subprocess.run(
+                ["openssl","x509","-noout","-ext","subjectAltName"],
+                input=pem.group(0),capture_output=True,text=True,timeout=6
+            )
+            sans=re.findall(r"DNS:([^,\s]+)",cert_info.stdout)
+            print("FTPS_CERT openssl_metadata=certificate_received")
+            print("FTPS_CERT openssl_dns_san_public="+(",".join(sans[:6]) if sans else "none"))
+            # This fallback is metadata only, not proof of identity or login.
+            print("FTPS_CERT strict_login=NOT_ATTEMPTED")
+    except (OSError,subprocess.TimeoutExpired):
+        print("FTPS_CERT openssl_metadata=timeout_or_unavailable")
     raise SystemExit(1)
 finally:
     try: f.close()
