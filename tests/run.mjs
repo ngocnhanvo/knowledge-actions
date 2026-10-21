@@ -128,9 +128,22 @@ async function wordpressBuildTriggerAudit(browser, origin) {
   assert(username && password, 'WordPress admin secrets are not configured for this caller');
   const page = await browser.newPage();
   try {
-    await page.goto(origin + '/wp-login.php', {
-      waitUntil: 'domcontentloaded', timeout: 45000,
-    });
+    // The WP login endpoint may be slow on shared hosting; retry navigation once.
+    let loginLoaded = false;
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      try {
+        await page.goto(origin + '/wp-login.php', {
+          waitUntil: 'commit', timeout: 45000,
+        });
+        await page.locator('#user_login').waitFor({ state: 'visible', timeout: 20000 });
+        loginLoaded = true;
+        break;
+      } catch (err) {
+        if (attempt === 2) throw err;
+        console.log('BUILD_TRIGGER_AUDIT login_page_retry=1');
+      }
+    }
+    assert(loginLoaded, 'WordPress login page unavailable');
     assertSameOrigin(page, origin);
     await page.locator('#user_login').fill(username);
     await page.locator('#user_pass').fill(password);
