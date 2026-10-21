@@ -55,7 +55,21 @@ if not ok:
 print("FTPS_AUDIT login=PASS")
 print("FTPS_AUDIT tls=certificate_verification_required")
 print("FTPS_AUDIT pwd_kind=" + ("root_or_chroot" if pwd == "/" else "nested_or_account_home"))
+# Classify only known website directories; never print the raw FTP PWD.
+path_labels = [
+ ("pse_frontend", "pse.webnvn.com"),
+ ("pse_wordpress", "admin-pse.webnvn.com"),
+ ("eduresearch_frontend", "nghiencuukhoahoc.webnvn.com"),
+ ("eduresearch_wordpress", "api-nghiencuukhoahoc.webnvn.com")
+]
+matches = [label for label, domain in path_labels if domain in pwd.lower()]
+pwd_class = matches[0] if len(matches) == 1 else (
+  "root_or_chroot" if pwd == "/" else "unidentified_account_home"
+)
+print("FTPS_AUDIT login_directory_class=" + pwd_class)
+print("FTPS_AUDIT login_directory_is_public_html=" + ("yes" if "public_html" in pwd.lower() else "no"))
 print("FTPS_AUDIT hmac_key_present=" + ("yes" if key else "no"))
+print("FTPS_AUDIT hmac_key_ref=" + ref("shared-key-equivalence-check-v1"))
 print("FTPS_AUDIT endpoint_ref=" + ref(url.hostname.lower() + ":" + str(port)))
 print("FTPS_AUDIT account_ref=" + ref(url.hostname.lower() + ":" + str(port) + "|" + username))
 
@@ -75,6 +89,9 @@ else:
         print("FTPS_ROOT " + label + "=" + ("present" if item in entries else "absent"))
 # Read-only directory checks. A failed CWD can mean chroot/path remapping.
 candidates = [
+ ("dot", "."),
+ ("parent", ".."),
+ ("slash", "/"),
  ("public_html", "public_html"),
  ("domains", "domains"),
  ("wp_admin", "wp-admin"),
