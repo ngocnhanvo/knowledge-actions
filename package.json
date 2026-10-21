@@ -1,0 +1,13 @@
+{
+  "name": "knowledge-actions-playwright",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Cross-project, read-only Playwright browser suites",
+  "scripts": {
+    "test:browser": "node tests/run.mjs"
+  },
+  "dependencies": {
+    "playwright": "1.64.0"
+  }
+}
