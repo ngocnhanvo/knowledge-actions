@@ -18,7 +18,7 @@ function originForTarget() {
   assert(parsed.username === '' && parsed.password === '', 'URL credentials are forbidden');
   assert(parsed.hostname.toLowerCase() === expectedHost.toLowerCase(), 'Target host mismatch');
   assert(parsed.port === '', 'Custom ports are not permitted');
-  assert(['smoke', 'wordpress-site-health'].includes(suite), 'Unknown test suite');
+  assert(['smoke', 'wordpress-site-health', 'wordpress-build-trigger-audit'].includes(suite), 'Unknown test suite');
   return parsed.origin;
 }
 function assertSameOrigin(page, origin) {
@@ -121,12 +121,53 @@ async function wordpressSiteHealth(browser, origin) {
   }
 }
 
+
+async function wordpressBuildTriggerAudit(browser, origin) {
+  const username = process.env.WP_ADMIN_USERNAME;
+  const password = process.env.WP_ADMIN_PASSWORD;
+  assert(username && password, 'WordPress admin secrets are not configured for this caller');
+  const page = await browser.newPage();
+  try {
+    await page.goto(origin + '/wp-login.php', {
+      waitUntil: 'domcontentloaded', timeout: 45000,
+    });
+    assertSameOrigin(page, origin);
+    await page.locator('#user_login').fill(username);
+    await page.locator('#user_pass').fill(password);
+    await page.locator('#wp-submit').click();
+    assertSameOrigin(page, origin);
+    await page.goto(origin + '/wp-admin/admin.php?page=vcs-build-trigger', {
+      waitUntil: 'domcontentloaded', timeout: 45000,
+    });
+    assertSameOrigin(page, origin);
+    assert(new URL(page.url()).pathname === '/wp-admin/admin.php',
+      'WordPress build dashboard unavailable or not authenticated');
+    const buildButton = page.locator('#vcs-build-btn-main');
+    const buildHead = page.locator('.wrap h1');
+    const headExists = await buildHead.filter({ hasText: /Build Website/i }).count() > 0;
+    const buttonExists = await buildButton.count() > 0;
+    console.log('BUILD_TRIGGER_AUDIT page_accessible=' + (headExists ? 'yes' : 'no'));
+    console.log('BUILD_TRIGGER_AUDIT build_button_exists=' + (buttonExists ? 'yes' : 'no'));
+    if (buttonExists) {
+      const disabled = await buildButton.isDisabled();
+      console.log('BUILD_TRIGGER_AUDIT build_button_disabled=' + (disabled ? 'yes' : 'no'));
+    }
+    console.log('BUILD_TRIGGER_AUDIT button_clicks=0 build_dispatches=0');
+    assert(headExists && buttonExists,
+      'Build Website page/plugin not found on this WordPress installation');
+    console.log('BUILD_TRIGGER_AUDIT=PASS (UI only; destination repository not established)');
+  } finally {
+    await page.close();
+  }
+}
+
 const origin = originForTarget();
 const started = Date.now();
 const browser = await chromium.launch({ headless: true });
 try {
   if (suite === 'smoke') await smoke(browser, origin);
-  else await wordpressSiteHealth(browser, origin);
+  else if (suite === 'wordpress-site-health') await wordpressSiteHealth(browser, origin);
+  else await wordpressBuildTriggerAudit(browser, origin);
   console.log('BROWSER_SUITE=PASS name=' + suite + ' elapsed_ms=' + (Date.now() - started));
 } finally {
   await browser.close();
