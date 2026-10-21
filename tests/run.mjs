@@ -136,12 +136,44 @@ async function wordpressBuildTriggerAudit(browser, origin) {
     await page.locator('#user_pass').fill(password);
     await page.locator('#wp-submit').click();
     assertSameOrigin(page, origin);
+    // Passive observation only: this plugin automatically polls its status.
+    // Do NOT invoke admin-ajax directly or click anything related to builds.
+    let polledRepo = '';
+    let pollingSeen = false;
+    page.on('response', async response => {
+      try {
+        const url = new URL(response.url());
+        if (url.origin !== origin || !url.pathname.endsWith('/wp-admin/admin-ajax.php')) return;
+        const data = new URLSearchParams(response.request().postData() ?? '');
+        if (data.get('action') !== 'vcs_check_build_status') return;
+        pollingSeen = true;
+        const json = await response.json();
+        const target = String(json?.data?.dashboard_url ?? '');
+        const match = /^https:\/\/github\.com\/ngocnhanvo\/([A-Za-z0-9_.-]+)\/actions(?:\/.*)?$/.exec(target);
+        if (match) polledRepo = match[1];
+      } catch {
+        // Network or response parsing failures must not dump credentials or HTML.
+      }
+    });
     await page.goto(origin + '/wp-admin/admin.php?page=vcs-build-trigger', {
       waitUntil: 'domcontentloaded', timeout: 45000,
     });
     assertSameOrigin(page, origin);
     assert(new URL(page.url()).pathname === '/wp-admin/admin.php',
       'WordPress build dashboard unavailable or not authenticated');
+    // Script origins distinguish the GitHub Trigger UI from a legacy Cloudflare Trigger UI.
+    const scripts = await page.locator('script[src]').evaluateAll(els =>
+      els.map(e => e.getAttribute('src') ?? '')
+    );
+    console.log('BUILD_TRIGGER_AUDIT github_plugin_script=' +
+      (scripts.some(src => src.includes('/plugins/github-trigger/')) ? 'yes' : 'no'));
+    console.log('BUILD_TRIGGER_AUDIT cloudflare_plugin_script=' +
+      (scripts.some(src => src.includes('/plugins/cloudflare-trigger/')) ? 'yes' : 'no'));
+    await page.waitForTimeout(4500);
+    console.log('BUILD_TRIGGER_AUDIT passive_status_poll=' + (pollingSeen ? 'seen' : 'not_seen'));
+    console.log('BUILD_TRIGGER_AUDIT status_repo=' +
+      (polledRepo && ['psevn-actions', 'nghiencuukhoahoc-actions', 'xuongmunonbaohiem-actions', 'escvn-actions'].includes(polledRepo)
+        ? polledRepo : 'unverified'));
     const buildButton = page.locator('#vcs-build-btn-main');
     const buildHead = page.locator('.wrap h1');
     const headExists = await buildHead.filter({ hasText: /Build Website/i }).count() > 0;
