@@ -21,6 +21,16 @@ on:
         type: string
         default: ''
         required: false
+      expected_db_sha256:
+        description: 'Optional SHA-256 of expected database name; only comparison verdict is logged'
+        type: string
+        default: ''
+        required: false
+      disallowed_db_sha256:
+        description: 'Optional SHA-256 of a forbidden database name; only comparison verdict is logged'
+        type: string
+        default: ''
+        required: false
     secrets:
       WP_ADMIN_USERNAME:
         required: false
@@ -59,5 +69,7 @@ jobs:
           EXPECTED_HOST: ${{ inputs.expected_hostname }}
           TEST_SUITE: ${{ inputs.suite }}
           DISALLOWED_DB_NAME: ${{ inputs.disallowed_db_name }}
+          EXPECTED_DB_SHA256: ${{ inputs.expected_db_sha256 }}
+          DISALLOWED_DB_SHA256: ${{ inputs.disallowed_db_sha256 }}
           WP_ADMIN_USERNAME: ${{ secrets.WP_ADMIN_USERNAME }}
           WP_ADMIN_PASSWORD: ${{ secrets.WP_ADMIN_PASSWORD }}
