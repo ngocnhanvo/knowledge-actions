@@ -66,11 +66,28 @@ async function wordpressSiteHealth(browser, origin) {
       'WordPress login unsuccessful, lacking Site Health permission, or MFA required');
     const databaseBlock = page.locator('#health-check-accordion-block-wp-database');
     await databaseBlock.waitFor({ state: 'attached', timeout: 12000 });
+    const headingButton = databaseBlock.locator('button').first();
+    if (await headingButton.count()) {
+      const expanded = await headingButton.getAttribute('aria-expanded');
+      if (expanded === 'false') await headingButton.click();
+    }
+    await page.waitForTimeout(900);
     const rows = await databaseBlock.locator('tr').evaluateAll(trs => trs.map(tr =>
       [...tr.querySelectorAll('th, td')].map(cell => (cell.textContent ?? '').trim())
     ));
     const row = rows.find(cells => cells.length >= 2 &&
       /database name|tên cơ sở dữ liệu/i.test(cells[0]));
+    if (!row) {
+      // Structural diagnostics only: do NOT log real field labels or field values.
+      const schema = await databaseBlock.evaluate(el => ({
+        rows: el.querySelectorAll('tr').length,
+        tables: el.querySelectorAll('table').length,
+        headings: el.querySelectorAll('th').length,
+        cells: el.querySelectorAll('td').length,
+        hasDatabaseNameLabel: /database name|tên cơ sở dữ liệu/i.test(el.textContent ?? ''),
+      }));
+      console.log('SITE_HEALTH_SCHEMA=' + JSON.stringify(schema));
+    }
     assert(row && row[1] && row[1].length <= 128, 'Database name was not available in Site Health');
     const actualDatabase = row[1].trim();
     // Never print the actual DB name, WordPress session, passwords, cookies, or HTML.
