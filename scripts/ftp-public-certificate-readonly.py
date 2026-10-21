@@ -87,6 +87,7 @@ if not candidate:
 
 # Domain name is public certificate metadata. Do not print username or raw host secret.
 print("FTPS_CERT matching_hostname="+candidate)
+print("FTPS_CERT configured_hostname_matches_certificate="+("yes" if host.lower()==candidate.lower() else "no"))
 user=os.getenv("FTP_USERNAME","")
 password=os.getenv("FTP_PASSWORD","")
 if not user or not password:
