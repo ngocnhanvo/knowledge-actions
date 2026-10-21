@@ -87,6 +87,9 @@ async function wordpressSiteHealth(browser, origin) {
         hasDatabaseNameLabel: /database name|tên cơ sở dữ liệu/i.test(el.textContent ?? ''),
       }));
       console.log('SITE_HEALTH_SCHEMA=' + JSON.stringify(schema));
+      // Header cells are public WordPress field titles, not database field values.
+      const labels = rows.map(cells => (cells[0] ?? '').slice(0, 90));
+      console.log('SITE_HEALTH_FIELD_TITLES=' + JSON.stringify(labels));
     }
     assert(row && row[1] && row[1].length <= 128, 'Database name was not available in Site Health');
     const actualDatabase = row[1].trim();
