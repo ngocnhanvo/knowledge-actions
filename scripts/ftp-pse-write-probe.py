@@ -31,6 +31,7 @@ if (
 filename = ".pse-ftps-write-probe-" + secrets.token_hex(16) + ".txt"
 payload = b"PSE_FTPS_WRITE_PERMISSION_TEST_V1\n" + secrets.token_hex(10).encode("ascii") + b"\n"
 assert len(payload) < 100
+upload_attempted = False
 uploaded = False
 deleted = False
 ftp = ftplib.FTP_TLS(context=ssl.create_default_context(), timeout=15)
@@ -58,6 +59,7 @@ try:
     else:
         raise RuntimeError("Random probe filename already exists: refusing overwrite")
 
+    upload_attempted = True
     ftp.storbinary("STOR " + filename, io.BytesIO(payload), blocksize=4096)
     uploaded = True
     print("FTP_PROBE write=PASS")
@@ -69,7 +71,7 @@ try:
     print("FTP_PROBE read_back_sha256=PASS")
 finally:
     # Delete only our cryptographically random probe path, never a website file.
-    if uploaded:
+    if upload_attempted:
         try:
             ftp.cwd(TARGET)
             if ftp.pwd().rstrip("/") == TARGET:
