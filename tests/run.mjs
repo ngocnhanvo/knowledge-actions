@@ -1,9 +1,12 @@
 import { chromium } from 'playwright';
+import { createHash } from 'node:crypto';
 
 const siteUrl = process.env.SITE_URL;
 const expectedHost = process.env.EXPECTED_HOST;
 const suite = process.env.TEST_SUITE ?? 'smoke';
 const disallowedDatabase = process.env.DISALLOWED_DB_NAME ?? '';
+const expectedHash = process.env.EXPECTED_DB_SHA256 ?? '';
+const disallowedHash = process.env.DISALLOWED_DB_SHA256 ?? '';
 
 function assert(ok, message) {
   if (!ok) throw new Error(message);
@@ -98,6 +101,19 @@ async function wordpressSiteHealth(browser, origin) {
     if (disallowedDatabase) {
       assert(actualDatabase !== disallowedDatabase, 'DATABASE_NAME_ISOLATION=FAIL (same as comparison name)');
       console.log('DATABASE_NAME_ISOLATION=PASS (different from supplied comparison name)');
+    }
+    if (expectedHash || disallowedHash) {
+      assert([expectedHash, disallowedHash].every(h => !h || /^[a-f0-9]{64}$/.test(h)),
+        'Invalid SHA-256 database comparison input');
+      const actualHash = createHash('sha256').update(actualDatabase, 'utf8').digest('hex');
+      if (expectedHash) {
+        assert(actualHash === expectedHash, 'DATABASE_REFERENCE_MATCH=FAIL');
+        console.log('DATABASE_REFERENCE_MATCH=PASS');
+      }
+      if (disallowedHash) {
+        assert(actualHash !== disallowedHash, 'DATABASE_DIFFERENCE=FAIL');
+        console.log('DATABASE_DIFFERENCE=PASS');
+      }
     }
     console.log('WORDPRESS_SITE_HEALTH=PASS');
   } finally {
