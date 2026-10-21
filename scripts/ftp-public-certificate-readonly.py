@@ -111,6 +111,41 @@ try:
             label=name
             break
     print("FTPS_CERT logged_in_directory_class="+label)
+    root=secure.pwd()
+    parts=[part for part in root.split("/") if part]
+    print("FTPS_SCOPE login_directory_depth="+str(len(parts)))
+    print("FTPS_SCOPE login_directory_public_html=" + ("yes" if parts and parts[-1].lower()=="public_html" else "no"))
+    # Read only: listing names are kept in the runner and never printed raw.
+    try:
+        names=secure.nlst()
+        entries={v.rstrip("/").split("/")[-1] for v in names}
+        print("FTPS_SCOPE root_list=PASS count="+str(len(entries)))
+        for token in ("domains","public_html","wp-admin","wp-content","index.html","index.php",
+                      "pse.webnvn.com","admin-pse.webnvn.com",
+                      "nghiencuukhoahoc.webnvn.com","api-nghiencuukhoahoc.webnvn.com"):
+            label_name=token.replace(".","_").replace("-","_")
+            print("FTPS_SCOPE root_"+label_name+"="+("present" if token in entries else "absent"))
+    except Exception as ex:
+        print("FTPS_SCOPE root_list=blocked_or_unavailable class="+type(ex).__name__)
+    paths=(
+        ("pse_frontend_abs","/domains/pse.webnvn.com/public_html"),
+        ("pse_wp_abs","/domains/admin-pse.webnvn.com/public_html"),
+        ("eduresearch_frontend_abs","/domains/nghiencuukhoahoc.webnvn.com/public_html"),
+        ("eduresearch_wp_abs","/domains/api-nghiencuukhoahoc.webnvn.com/public_html"),
+        ("public_html_relative","public_html"),
+        ("domains_relative","domains"),
+        ("pse_frontend_relative","domains/pse.webnvn.com/public_html"),
+        ("pse_wp_relative","domains/admin-pse.webnvn.com/public_html"),
+        ("eduresearch_frontend_relative","domains/nghiencuukhoahoc.webnvn.com/public_html"),
+        ("eduresearch_wp_relative","domains/api-nghiencuukhoahoc.webnvn.com/public_html")
+    )
+    for name,target in paths:
+        try:
+            secure.cwd(root)
+            secure.cwd(target)
+            print("FTPS_SCOPE cwd_"+name+"=yes")
+        except Exception:
+            print("FTPS_SCOPE cwd_"+name+"=no_or_unverified")
     print("FTPS_CERT remote_changes=NONE")
 except Exception as ex:
     print("FTPS_CERT strict_login=FAILED class="+type(ex).__name__)
