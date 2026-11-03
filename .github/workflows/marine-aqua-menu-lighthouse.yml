@@ -1,0 +1,166 @@
+name: Lighthouse audit Marine Aqua main menu (Mobile + Desktop)
+on:
+  push:
+    branches:
+      - audit/marine-aqua-menu-20261103
+permissions:
+  contents: read
+env:
+  AUDIT_BASE_URL: https://marine-aqua.vn/
+jobs:
+  audit:
+    name: ${{ matrix.slug }} · Mobile + Desktop
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix:
+        include:
+          - slug: trang-chu
+            path: ""
+          - slug: chinh-sach-doi-tra-hang
+            path: "chinh-sach-doi-tra-hang/"
+          - slug: huong-dan-mua-hang-o-xa
+            path: "huong-dan-mua-hang-o-xa/"
+          - slug: huong-dan-mua-hang-tai-nha
+            path: "huong-dan-mua-hang-tai-nha/"
+          - slug: thoi-gian-ban-hang
+            path: "thoi-gian-ban-hang/"
+          - slug: lien-he
+            path: "lien-he/"
+          - slug: phi-ship-hang
+            path: "thong-bao/"
+          - slug: bai-viet
+            path: "bai-viet/"
+          - slug: tong-quan-ve-be-ca-bien
+            path: "tong-quan-ve-be-ca-bien/"
+          - slug: set-up-be-ca-bien-mini
+            path: "cat/set-up-be-ca-bien-mini/"
+          - slug: xu-ly-van-de-be-ca
+            path: "cat/kinh-nghiem-tri-reu-hai-tao-hai-trong-be-ca/"
+          - slug: chon-muoi-vi-sinh-hoa-chat
+            path: "cat/cach-chon-muoi-vi-sinh-va-hoa-chat-tot-nhat-cho-be-ca/"
+          - slug: chon-thuc-an
+            path: "cat/cach-chon-thuc-an-tot-cho-ca-va-san-ho/"
+          - slug: tin-kien-thuc
+            path: "cat/tin-kien-thuc/"
+          - slug: thiet-bi-be-ca
+            path: "cat/cac-thiet-bi-trong-be-ca-den-skimmer-may-bom/"
+    env:
+      PAGE_SLUG: ${{ matrix.slug }}
+      PAGE_PATH: ${{ matrix.path }}
+    steps:
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Install Lighthouse 13.5.0
+        run: npm install --no-save --no-package-lock lighthouse@13.5.0
+      - name: Measure each strategy independently
+        shell: bash
+        run: |
+          mkdir -p outputs
+          target="${AUDIT_BASE_URL%/}/${PAGE_PATH#/}"
+          echo "TARGET_URL=$target" >> "$GITHUB_ENV"
+          for mode in mobile desktop; do
+            extra=()
+            if [[ "$mode" == desktop ]]; then extra=(--preset=desktop); fi
+            echo "Running $PAGE_SLUG $mode on $target"
+            for attempt in 1 2; do
+              if timeout 150s ./node_modules/.bin/lighthouse "$target" \
+                "${extra[@]}" \
+                --chrome-flags="--headless --no-sandbox --disable-dev-shm-usage" \
+                --output=json --output-path="./outputs/raw-$PAGE_SLUG-$mode.json" --quiet; then
+                  break
+              fi
+              echo "::warning::Lighthouse failed: $PAGE_SLUG $mode attempt $attempt"
+            done
+          done
+      - name: Extract metrics and diagnostics
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json,os,glob
+          slug=os.environ['PAGE_SLUG']
+          page=os.environ['PAGE_PATH']
+          url=os.environ['TARGET_URL']
+          result_dir='outputs'
+          for mode in ['mobile','desktop']:
+           p=f'{result_dir}/raw-{slug}-{mode}.json'
+           info={'slug':slug,'path':page,'url':url,'strategy':mode,'status':'failed'}
+           if os.path.isfile(p):
+            try:
+             r=json.load(open(p,encoding='utf-8'))
+             au=r.get('audits',{})
+             score=lambda key: round(100*r['categories'][key]['score']) if r.get('categories',{}).get(key,{}).get('score') is not None else None
+             metric=lambda key: (au.get(key) or {}).get('numericValue')
+             detail=lambda key: (au.get(key) or {}).get('displayValue')
+             savings=lambda key: (au.get(key) or {}).get('details',{}).get('overallSavingsBytes')
+             info.update(status='ok' if not r.get('runtimeError') else 'error',fetched=r.get('fetchTime'),finalUrl=r.get('finalUrl'),lighthouseVersion=r.get('lighthouseVersion'),
+              performance=score('performance'),accessibility=score('accessibility'),best_practices=score('best-practices'),seo=score('seo'),
+              fcp_ms=metric('first-contentful-paint'),lcp_ms=metric('largest-contentful-paint'),tbt_ms=metric('total-blocking-time'),cls=metric('cumulative-layout-shift'),si_ms=metric('speed-index'),tti_ms=metric('interactive'),
+              total_bytes=metric('total-byte-weight'),server_ms=metric('server-response-time'),unused_js_bytes=savings('unused-javascript'),unused_css_bytes=savings('unused-css-rules'),
+              render_blocking=detail('render-blocking-resources'),cache_insight=detail('cache-insight'),errors=r.get('runWarnings',[])[:5],runtime_error=r.get('runtimeError'))
+            except Exception as e: info['error']=str(e)
+           else: info['error']='Lighthouse did not produce output'
+           with open(f'{result_dir}/summary-{slug}-{mode}.json','w',encoding='utf-8') as f: json.dump(info,f,ensure_ascii=False,indent=2)
+           print(slug,mode,info['status'],'Performance',info.get('performance'),'LCP(ms)',info.get('lcp_ms'),'TBT(ms)',info.get('tbt_ms'))
+          PY
+      - name: Upload raw reports and metrics
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-menu-${{ matrix.slug }}
+          path: outputs/
+          if-no-files-found: error
+          retention-days: 14
+
+  aggregate:
+    name: Combined menu results
+    needs: [audit]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download each page audit
+        uses: actions/download-artifact@v4
+        with:
+          pattern: audit-menu-*
+          merge-multiple: true
+          path: collected/
+      - name: Build CSV JSON and summary
+        run: |
+          python - <<'PY'
+          import json,csv,pathlib,statistics,collections,os
+          files=sorted(pathlib.Path('collected').rglob('summary-*.json'))
+          rows=[json.loads(p.read_text(encoding='utf-8')) for p in files]
+          out=pathlib.Path('combined');out.mkdir(exist_ok=True)
+          (out/'lighthouse-menu-results.json').write_text(json.dumps(rows,ensure_ascii=False,indent=2),encoding='utf-8')
+          cols=['slug','path','strategy','status','performance','accessibility','best_practices','seo','fcp_ms','lcp_ms','tbt_ms','cls','si_ms','tti_ms','total_bytes','server_ms','unused_js_bytes','unused_css_bytes','finalUrl','fetched','error']
+          with (out/'lighthouse-menu-results.csv').open('w',encoding='utf-8-sig',newline='') as f:
+           w=csv.DictWriter(f,fieldnames=cols,extrasaction='ignore');w.writeheader();w.writerows(rows)
+          lines=['# Marine Aqua - Lighthouse menu audit','',f'Checked: {len(rows)} mode/page results; successful: {sum(r["status"]=="ok" for r in rows)}','',
+           '|Page|Mobile|Desktop|Mobile LCP|Desktop LCP|Status|','|---|---:|---:|---:|---:|---|']
+          by=collections.defaultdict(dict)
+          for r in rows:by[r['slug']][r['strategy']]=r
+          for slug,variants in by.items():
+           m=variants.get('mobile',{});d=variants.get('desktop',{})
+           val=lambda x: str(x) if x is not None else 'n/a'
+           seconds=lambda x: (f'{x/1000:.2f}s' if isinstance(x,(int,float)) else '-')
+           status='OK' if m.get('status')=='ok' and d.get('status')=='ok' else 'CHECK'
+           lines.append(f'|{slug}|{val(m.get("performance"))}|{val(d.get("performance"))}|{seconds(m.get("lcp_ms"))}|{seconds(d.get("lcp_ms"))}|{status}|')
+          vals=lambda mode,key: [r[key] for r in rows if r.get('strategy')==mode and r.get('status')=='ok' and isinstance(r.get(key),(int,float))]
+          for mode in ['mobile','desktop']:
+           ps=vals(mode,'performance'); lcps=vals(mode,'lcp_ms')
+           if ps:
+            lines.extend(['',f'{mode.upper()}: median Performance {statistics.median(ps):g}/100, range {min(ps)}-{max(ps)}, median LCP {statistics.median(lcps)/1000:.2f}s' if lcps else ''])
+          (out/'lighthouse-menu-summary.md').write_text('\n'.join(lines)+'\n',encoding='utf-8')
+          print('\n'.join(lines))
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a',encoding='utf-8') as f: f.write('\n'.join(lines)+'\n')
+          PY
+      - name: Upload consolidated audit data
+        uses: actions/upload-artifact@v4
+        with:
+          name: marine-aqua-menu-combined
+          path: combined/
+          retention-days: 30
