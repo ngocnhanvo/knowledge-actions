@@ -1,0 +1,52 @@
+name: One-off Lighthouse Desktop audit
+on:
+  push:
+    branches:
+      - audit/marine-aqua-desktop-20261103
+permissions:
+  contents: read
+jobs:
+  lighthouse-desktop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      AUDIT_REQUEST: ${{ github.event.head_commit.message }}
+    steps:
+      - name: Get URL from audit commit
+        shell: bash
+        run: |
+          url="${AUDIT_REQUEST#AUDIT_URL=}"
+          if [[ ! "$AUDIT_REQUEST" =~ ^AUDIT_URL=https://[A-Za-z0-9.-]+(/[^[:space:]]*)?$ ]]; then
+            echo "Missing or invalid AUDIT_URL in commit message"; exit 1
+          fi
+          echo "TARGET_URL=$url" >> "$GITHUB_ENV"
+      - name: Use Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Run Lighthouse for desktop
+        shell: bash
+        run: |
+          npx --yes lighthouse@13.5.0 "$TARGET_URL" \
+            --preset=desktop \
+            --chrome-flags="--headless --no-sandbox --disable-dev-shm-usage" \
+            --output=json --output-path=./lighthouse-desktop.json --quiet
+      - name: Print verified audit metrics
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs=require('fs');
+          const r=JSON.parse(fs.readFileSync('lighthouse-desktop.json','utf8'));
+          const keys={'FCP':'first-contentful-paint','LCP':'largest-contentful-paint','TBT':'total-blocking-time','CLS':'cumulative-layout-shift','Speed Index':'speed-index','TTI':'interactive','Server Response':'server-response-time','Total Bytes':'total-byte-weight'};
+          const lines=['# Lighthouse Desktop audit','URL: '+r.finalUrl,'Lighthouse: '+r.lighthouseVersion,'Fetch time: '+r.fetchTime,'Strategy: '+r.configSettings.formFactor,...Object.entries(r.categories).map(([k,v])=>k+': '+Math.round((v.score||0)*100))];
+          for(const [name,key] of Object.entries(keys)){const a=r.audits[key];if(a)lines.push(name+': '+(a.displayValue||a.numericValue));}
+          const insights=['lcp-discovery-insight','lcp-breakdown-insight','render-blocking-insight','unused-javascript','unused-css-rules','cache-insight','third-parties-insight'];
+          for(const id of insights){const a=r.audits[id]; if(a) lines.push('Audit '+id+': '+(a.displayValue||a.title));}
+          console.log(lines.join('\n'));fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,lines.join('\n\n')+'\n');
+          NODE
+      - name: Save raw Lighthouse result
+        uses: actions/upload-artifact@v4
+        with:
+          name: marine-aqua-desktop-lighthouse
+          path: lighthouse-desktop.json
+          retention-days: 14
