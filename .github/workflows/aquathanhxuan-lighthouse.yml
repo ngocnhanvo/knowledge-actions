@@ -1,0 +1,97 @@
+name: Lighthouse audit Aqua Thanh Xuan navigation - Mobile and Desktop
+on:
+  push:
+    branches: [audit/aquathanhxuan-menu-20261103]
+permissions:
+  contents: read
+env:
+  AUDIT_BASE_URL: https://aquathanhxuan.com/
+jobs:
+  discover:
+    name: Extract current navigation URLs
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    outputs:
+      matrix: ${{ steps.menu.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install read-only HTML parser
+        run: python3 -m pip install --quiet requests beautifulsoup4
+      - id: menu
+        name: Find current navigation pages
+        run: python3 scripts/aquathanhxuan_discover_menu.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aqua-tx-menu-discovery
+          path: discovery/
+          retention-days: 30
+
+  audit:
+    name: ${{ matrix.slug }} - Mobile and Desktop
+    needs: discover
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    strategy:
+      fail-fast: false
+      max-parallel: 12
+      matrix: ${{ fromJSON(needs.discover.outputs.matrix) }}
+    env:
+      PAGE_SLUG: ${{ matrix.slug }}
+      PAGE_URL: ${{ matrix.url }}
+      PAGE_LABEL: ${{ matrix.label }}
+      PAGE_GROUP: ${{ matrix.group }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install pinned Lighthouse
+        run: npm install --no-save --no-package-lock --ignore-scripts lighthouse@13.5.0
+      - name: Measure Mobile then Desktop
+        shell: bash
+        run: |
+          mkdir -p outputs
+          for mode in mobile desktop; do
+            args=()
+            if [[ "$mode" == desktop ]]; then args=(--preset=desktop); fi
+            echo "Lighthouse $mode for $PAGE_URL"
+            if ! timeout 155s ./node_modules/.bin/lighthouse "$PAGE_URL" \
+              "${args[@]}" \
+              --chrome-flags="--headless --no-sandbox --disable-dev-shm-usage" \
+              --output=json --output-path="outputs/audit-$PAGE_SLUG-$mode.json" \
+              --quiet; then
+              echo "::warning::Lighthouse failed or timed out: $PAGE_URL ($mode)"
+            fi
+          done
+      - name: Extract comparable metrics
+        run: python3 scripts/aquathanhxuan_extract.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: audit-aqua-tx-${{ matrix.slug }}
+          path: outputs/
+          retention-days: 14
+
+  combine:
+    name: Consolidate all menu audits
+    needs: [discover,audit]
+    if: always() && needs.discover.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: aqua-tx-menu-discovery
+          path: collected
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: audit-aqua-tx-*
+          merge-multiple: true
+          path: collected
+      - name: Generate CSV JSON and scorecard
+        run: python3 scripts/aquathanhxuan_aggregate.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aquathanhxuan-lighthouse-combined
+          path: combined/
+          retention-days: 30
