@@ -1,0 +1,48 @@
+name: Website full menu Playwright + Lighthouse audit
+
+on:
+  push:
+    branches:
+      - 'audit/duhoc-thompbui-*'
+    paths:
+      - '.github/workflows/site-audit-trigger.yml'
+      - 'scripts/website-audit.mjs'
+      - 'scripts/website-audit-summary.mjs'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: Desktop and mobile; homepage and each distinct menu URL
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.0-noble
+      options: --ipc=host
+    env:
+      AUDIT_URL: https://duhoc.thompbui.com/
+      AUDIT_DIR: site-audit-out
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Playwright, Lighthouse and Chrome launcher
+        run: npm install --no-save --no-package-lock --ignore-scripts --no-audit --no-fund playwright@1.64.0 lighthouse@12 chrome-launcher
+      - name: Discover homepage menu links (desktop and mobile)
+        env:
+          AUDIT_MODE: discover
+        run: node scripts/website-audit.mjs
+      - name: Audit each menu URL on both devices (two workers)
+        shell: bash
+        run: |
+          node -e 'const a=require("./site-audit-out/menu-targets.json").targets; process.stdout.write(a.map(x=>x.url).join("\n")+"\n")' | xargs -P 2 -I '{}' sh -c 'AUDIT_MODE=audit TARGET_URL="$1" node scripts/website-audit.mjs' _ '{}'
+      - name: Generate full scorecard
+        if: always()
+        run: node scripts/website-audit-summary.mjs
+      - name: Upload screenshots and Lighthouse reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: website-audit-duhoc-thompbui-com
+          path: site-audit-out
+          retention-days: 30
+          if-no-files-found: warn
