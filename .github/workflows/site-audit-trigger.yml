@@ -34,7 +34,7 @@ jobs:
       - name: Audit each menu URL on both devices (two workers)
         shell: bash
         run: |
-          jq -r '.targets[].url' site-audit-out/menu-targets.json | xargs -P 2 -I '{}' sh -c 'AUDIT_MODE=audit TARGET_URL="$1" node scripts/website-audit.mjs' _ '{}'
+          node -e 'const a=require("./site-audit-out/menu-targets.json").targets; process.stdout.write(a.map(x=>x.url).join("\n")+"\n")' | xargs -P 2 -I '{}' sh -c 'AUDIT_MODE=audit TARGET_URL="$1" node scripts/website-audit.mjs' _ '{}'
       - name: Generate full scorecard
         if: always()
         run: node scripts/website-audit-summary.mjs
