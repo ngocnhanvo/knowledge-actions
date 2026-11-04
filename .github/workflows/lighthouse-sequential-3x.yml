@@ -1,0 +1,38 @@
+name: WORLD K Lighthouse 16 pages - sequential 3-run median
+
+on:
+  push:
+    branches:
+      - 'audit/duhoc-thompbui-*'
+    paths:
+      - '.github/workflows/lighthouse-sequential-3x.yml'
+      - 'scripts/lighthouse-sequential-3x.mjs'
+
+permissions:
+  contents: read
+
+jobs:
+  measure:
+    name: 16 pages x mobile+desktop x 3, sequential only
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.0-noble
+      options: --ipc=host
+    env:
+      AUDIT_URL: https://duhoc.thompbui.com/
+      AUDIT_DIR: sequential-audit-out
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Lighthouse and Playwright
+        run: npm install --no-save --no-package-lock --ignore-scripts --no-audit --no-fund playwright@1.64.0 lighthouse@12 chrome-launcher
+      - name: Run isolated Lighthouse measurements (concurrency=1)
+        run: node scripts/lighthouse-sequential-3x.mjs
+      - name: Publish table and raw measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: world-k-lighthouse-sequential-three-runs
+          path: sequential-audit-out
+          retention-days: 30
+          if-no-files-found: warn
