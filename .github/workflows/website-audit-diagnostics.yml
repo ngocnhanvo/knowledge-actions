@@ -1,0 +1,33 @@
+name: Focused SEO and CLS root-cause diagnostics
+
+on:
+  push:
+    branches:
+      - 'audit/duhoc-thompbui-*'
+    paths:
+      - '.github/workflows/website-audit-diagnostics.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostics:
+    name: Investigate Lighthouse SEO and layout shift failures
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.0-noble
+      options: --ipc=host
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Lighthouse and Playwright
+        run: npm install --no-save --no-package-lock --ignore-scripts --no-audit --no-fund playwright@1.64.0 lighthouse@12 chrome-launcher
+      - name: Analyze SEO audits and CLS shifts of representative pages
+        run: node scripts/website-audit-diagnostics.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: website-audit-root-causes
+          path: site-diagnostics
+          retention-days: 30
+          if-no-files-found: warn
