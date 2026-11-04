@@ -1,0 +1,7 @@
+name: Site audit PR
+on: pull_request
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo audit
