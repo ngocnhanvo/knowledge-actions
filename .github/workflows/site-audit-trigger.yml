@@ -1,8 +1,9 @@
 name: Website full menu Playwright + Lighthouse audit
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
+  push:
+    branches:
+      - 'audit/duhoc-thompbui-*'
     paths:
       - '.github/workflows/site-audit-trigger.yml'
       - 'scripts/website-audit.mjs'
